@@ -7,6 +7,16 @@ import time
 import imageio
 import cv2
 
+is_test = True
+is_newfile = True
+save_folder = "Matrix_s"
+new_save_folder = "Matrix_s"
+
+theta = [1,1]
+thresholding = 0.01
+img1 = plt.imread("image1.png")
+img2 = plt.imread("image2.png")
+
 # gif class
 label_to_color = {
     0: [255,  0, 0],
@@ -53,15 +63,6 @@ class gif_creater:
             if not np.issubdtype(img.dtype,np.uint8):
                 self.imgs[i] = (img * 255).astype(np.uint8)
 
-is_test = True
-is_newfile = True
-save_folder = "Matrix_s"
-new_save_folder = "Matrix_s"
-
-theta = [1,1]
-thresholding = 0.01
-img1 = plt.imread("image1.png")
-img2 = plt.imread("image2.png")
 gif = gif_creater()
 
 # kernel function
@@ -146,6 +147,36 @@ def k_means(img,data,K):
 
     return result
 
+# kernel k means
+def kernel_k_means(img,W,K):
+    N = W.shape[0]
+    result = np.random.randint(0,K,N)
+    pre_result = np.zeros(N)
+    pre_result.fill(-1)
+    dist = np.zeros((N,K))
+    iteration = 1
+    while True:
+        dist.fill(0)
+        for c in range(K):
+            mask = result == c
+            c_num = np.sum(mask)
+            dist[:,c] = np.diag(W)
+            KK = W[mask][:,mask]
+            dist[:,c] += np.sum(KK)/(c_num**2)
+            dist[:,c] -= 2*np.sum(W[:,mask],axis=1)/c_num
+            print(c_num,dist[:,c].shape,W[:,mask].shape)
+        pre_result = result.copy()
+        result = dist.argmin(axis=1)
+        
+        draw_label(result,img)
+        change_num_ratio = 1 - np.sum((pre_result - result) == 0) / N
+        print("K-means iteration : {} , The ratio of changing label : {}".format(iteration,change_num_ratio))
+        iteration += 1
+        if  change_num_ratio < thresholding:
+            break
+    
+    return result
+
 # Default assume label coming from k-means. It's 1-D array
 def draw_label(label,img):
     h,w,c = img.shape
@@ -181,18 +212,32 @@ def degree_matrix(W):
         D[i,i] = sum
     return D 
 
-# sepctral clustering
-def spectral(K,is_norm):
-    # prepare associated matrix W & D
+# prepare associated matrix W & D
+# W is similarity matrix
+# D is degree matrix
+def save_Matrix(W_fileName , D_fileName):
+    strat_time = time.time()
     if is_newfile and not os.path.exists(new_save_folder):
         W = weighted_graph(img1)
         D = degree_matrix(W)
-        save_matrix(new_save_folder,"W",W)
-        save_matrix(new_save_folder,"D",D)
+        save_matrix(new_save_folder,W_fileName,W)
+        save_matrix(new_save_folder,D_fileName,D)
     else:
-        W = np.load(os.path.join(save_folder,"W.npy"))
-        D = np.load(os.path.join(save_folder,"D.npy"))
         print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
+    end_time = time.time()
+    time_c= end_time - strat_time
+    min_c = int(time_c / 60)
+    time_c = time_c - min_c * 60
+    print('Preparing data total time cost : {}m , {:.3f}s'.format(min_c,time_c))
+
+# load pre-computing matrix
+def load_Matrix(W_fileName , D_fileName):
+    W = np.load(os.path.join(save_folder,"{}.npy".format(W_fileName)))
+    D = np.load(os.path.join(save_folder,"{}.npy".format(D_fileName)))
+    return W,D
+
+# sepctral clustering
+def spectral(K,W,D,is_norm):
     L = D - W
     # normalized Laplacian
     if is_norm:
@@ -221,9 +266,12 @@ if is_test:
     img1 = img1[::5,::5,:]
 h,w,c = img1.shape
 img1_data = img1.reshape((h*w,c))
+save_Matrix("W","D")
+W1,D1 = load_Matrix("W","D")
 # label = k_means(img1,img1_data,4)
+label = kernel_k_means(img1,W1,4)
 gif.append(img1)
-spectral(4,True)
+# spectral(4,W1,D1,True)
 plt.figure()
 plt.imshow(img1)
 gif.save("Result/result.gif")
