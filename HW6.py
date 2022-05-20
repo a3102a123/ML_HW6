@@ -4,6 +4,54 @@ import math
 import os
 import sys
 import time
+import imageio
+import cv2
+
+# gif class
+label_to_color = {
+    0: [255,  0, 0],
+    1: [0,  255, 0],
+    2: [ 0,  0,  255],
+    3: [255, 255, 0],
+    4: [0, 255, 255],
+    5: [255, 0, 255],
+    6: [255,255,255]
+}
+class gif_creater:
+    def __init__(self,fps=0.8):
+        self.imgs = []
+        self.fps = fps
+
+    def append(self,img):
+        self.imgs.append(img)
+    
+    def append_label(self,label):
+        img = self.label2Image(label)
+        self.append(img)
+        
+    def label2Image(self,label):
+        img = np.zeros((label.shape[0],label.shape[1],3),dtype=np.uint8)
+        for l,color in label_to_color.items():
+            img[label == l,:] = color
+        return img
+
+    def save(self,filepath):
+        self.ToInt()
+        self.resize(400)
+        imageio.mimsave(filepath, self.imgs, fps=self.fps)
+
+    def clear(self):
+        self.imgs.clear()
+
+    def resize(self,size):
+        if self.imgs[0].shape[0] != size:
+            for i,img in enumerate(self.imgs):
+                self.imgs[i] = cv2.resize(img, (size, size), interpolation=cv2.INTER_LANCZOS4)
+
+    def ToInt(self):
+        for i,img in enumerate(self.imgs):
+            if not np.issubdtype(img.dtype,np.uint8):
+                self.imgs[i] = (img * 255).astype(np.uint8)
 
 is_test = True
 is_newfile = True
@@ -14,6 +62,7 @@ theta = [1,1]
 thresholding = 0.01
 img1 = plt.imread("image1.png")
 img2 = plt.imread("image2.png")
+gif = gif_creater()
 
 # kernel function
 def kernel(a_pos,b_pos,a_c,b_c,theta):
@@ -100,12 +149,13 @@ def k_means(img,data,K):
 # Default assume label coming from k-means. It's 1-D array
 def draw_label(label,img):
     h,w,c = img.shape
-    picture = np.zeros((h,w))
+    label_picture = np.zeros((h,w))
     for i,l in enumerate(label):
         idx = get_pos(i,w)
-        picture[idx[0],idx[1]] = l
+        label_picture[idx[0],idx[1]] = l
+    gif.append_label(label_picture)
     plt.figure()
-    plt.imshow(picture)
+    plt.imshow(label_picture)
 
 # Calc similarity graphy
 def weighted_graph(img):
@@ -172,7 +222,9 @@ if is_test:
 h,w,c = img1.shape
 img1_data = img1.reshape((h*w,c))
 # label = k_means(img1,img1_data,4)
+gif.append(img1)
 spectral(4,True)
 plt.figure()
 plt.imshow(img1)
+gif.save("Result/result.gif")
 plt.show()
