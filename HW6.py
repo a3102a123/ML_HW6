@@ -1,4 +1,3 @@
-from cv2 import threshold
 import numpy as np 
 import matplotlib.pyplot as plt 
 import math
@@ -12,7 +11,7 @@ save_folder = "Matrix_s"
 new_save_folder = "Matrix_s"
 
 theta = [1,1]
-thresholding = 0.001
+thresholding = 0.01
 img1 = plt.imread("image1.png")
 img2 = plt.imread("image2.png")
 
@@ -34,17 +33,41 @@ def save_matrix(folder_name,file_name,matrix):
 
 # k-means algorithm
 ### data is a 2-D array. The rows are the data points , the columns are features
-def init_center(data,k):
-    centers = np.zeros((k,data.shape[1]))
+def init_center_random(data,K):
+    centers = np.zeros((K,data.shape[1]))
     feature_mean = np.mean(data,axis=0)
     feature_std = np.std(data,axis=0)
     for c in range(data.shape[1]):
-        centers[:,c]=np.random.normal(feature_mean[c],feature_std[c],size=k)
+        centers[:,c]=np.random.normal(feature_mean[c],feature_std[c],size=K)
     return centers
 
-def k_means(data,K):
+def init_center_plus(data,K):
+    centers = np.zeros((K,data.shape[1]))
+    centers_idx = np.zeros((K))
+    idx = np.random.randint(0,data.shape[0],1)
+    centers_idx[0] = idx
+    centers[0,:] = data[idx,:]
+    center_num = 1
+    while center_num < K:
+        dis = np.zeros(data.shape[0])
+        for i,d in enumerate(data):
+            for j in range(center_num):
+                temp_dis = np.linalg.norm(centers[j] - d,2)
+                if j == 0:
+                    dis[i] = temp_dis
+                else:
+                    dis[i] = min(dis[i],temp_dis)
+        dis = dis / dis.sum()
+        idx = np.argmax(dis)
+        centers[center_num,:] = data[idx,:]
+        centers_idx[center_num] = idx
+        center_num +=1
+    print(centers_idx)
+    return centers
+
+def k_means(img,data,K):
     result = np.zeros(len(data),dtype=np.uint8)
-    centers = init_center(data,K)
+    centers = init_center_plus(data,K)
     iteration = 1
     while True:
         # E-step (clustering the data points by closest center)
@@ -55,19 +78,19 @@ def k_means(data,K):
                 if dis < min_dis:
                     min_dis = dis
                     result[i] = l  
-        # M-step
+        # M-step (calculating the new center point)
         diff = 0
         for l in range(K):
             idx = (result==l)
             if idx.sum() != 0:
                 new_center = np.mean(data[idx],axis=0)
             else:
-                new_center = np.array([0,0,0])
+                new_center = np.zeros(data.shape[1])
             diff += np.linalg.norm(new_center - centers[l],2)
             centers[l] = new_center
         print("K-means iteration : {} , difference : {}".format(iteration,diff))
-        draw_label(result,img1)
-        plt.show()
+        draw_label(result,img)
+        # plt.show()
         iteration += 1
         if diff <= thresholding:
             break
@@ -109,7 +132,7 @@ def degree_matrix(W):
     return D 
 
 # sepctral clustering
-def spectral():
+def spectral(K,is_norm):
     # prepare associated matrix W & D
     if is_newfile and not os.path.exists(new_save_folder):
         W = weighted_graph(img1)
@@ -120,13 +143,25 @@ def spectral():
         W = np.load(os.path.join(save_folder,"W.npy"))
         D = np.load(os.path.join(save_folder,"D.npy"))
         print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
-    
     L = D - W
+    # normalized Laplacian
+    if is_norm:
+        D_inv_srt = np.diag(1/np.diag(np.sqrt(D)))
+        L = D_inv_srt @ L @ D_inv_srt
+        
     # calc the eigenvalue & eigenvector of Laplacian graph
     eigenValues , eigenVectors = np.linalg.eig(L)
     sorted_eigen_idx = np.argsort(eigenValues)
-    for i in range(20):
-        print(eigenValues[sorted_eigen_idx[i]],sorted_eigen_idx[i]) 
+    print(eigenVectors.shape)
+    H = eigenVectors[:,sorted_eigen_idx[1:K+1]]
+
+    # normalize the norm of every row to 1
+    if is_norm:
+        sum = np.linalg.norm(H,axis=1)
+        H = H / sum.reshape(-1,1)
+
+    print(np.linalg.norm(H[0,:]))
+    label = k_means(img1,H,K)
 
 # print(kernel(np.array([1,1]),np.array([50,1]),np.array([1,1,1]),np.array([1,1,1]),theta))
 
@@ -136,6 +171,8 @@ if is_test:
     img1 = img1[::5,::5,:]
 h,w,c = img1.shape
 img1_data = img1.reshape((h*w,c))
-label = k_means(img1_data,4)
-# spectral()
+# label = k_means(img1,img1_data,4)
+spectral(4,True)
+plt.figure()
+plt.imshow(img1)
 plt.show()
