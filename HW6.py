@@ -8,11 +8,11 @@ import imageio
 import cv2
 
 is_test = True
-is_newfile = True
+is_newfile = False
 save_folder = "Matrix_s"
 new_save_folder = "Matrix_s"
 
-theta = [1,1]
+theta = [0.0007,0.0007]
 thresholding = 0.01
 img1 = plt.imread("image1.png")
 img2 = plt.imread("image2.png")
@@ -76,7 +76,7 @@ def get_pos(idx,width):
     j = idx % width
     return np.array([i,j])
 
-def save_matrix(folder_name,file_name,matrix):
+def save_Matrix(folder_name,file_name,matrix):
     file_path = os.path.join(folder_name,file_name)
     os.makedirs(new_save_folder,exist_ok = True)
     np.save(file_path,matrix)
@@ -155,16 +155,17 @@ def kernel_k_means(img,W,K):
     pre_result.fill(-1)
     dist = np.zeros((N,K))
     iteration = 1
+    draw_label(result,img)
     while True:
         dist.fill(0)
         for c in range(K):
-            mask = result == c
+            mask = (result == c)
             c_num = np.sum(mask)
             dist[:,c] = np.diag(W)
             KK = W[mask][:,mask]
             dist[:,c] += np.sum(KK)/(c_num**2)
             dist[:,c] -= 2*np.sum(W[:,mask],axis=1)/c_num
-            print(c_num,dist[:,c].shape,W[:,mask].shape)
+            # print(c_num,dist[:,c].shape,W[:,mask].shape,KK.shape)
         pre_result = result.copy()
         result = dist.argmin(axis=1)
         
@@ -215,20 +216,20 @@ def degree_matrix(W):
 # prepare associated matrix W & D
 # W is similarity matrix
 # D is degree matrix
-def save_Matrix(W_fileName , D_fileName):
+def prepare_Matrix(W_fileName , D_fileName , img):
     strat_time = time.time()
-    if is_newfile and not os.path.exists(new_save_folder):
-        W = weighted_graph(img1)
-        D = degree_matrix(W)
-        save_matrix(new_save_folder,W_fileName,W)
-        save_matrix(new_save_folder,D_fileName,D)
-    else:
-        print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
+
+    W = weighted_graph(img)
+    D = degree_matrix(W)
+    save_Matrix(new_save_folder,W_fileName,W)
+    save_Matrix(new_save_folder,D_fileName,D)
+        
     end_time = time.time()
     time_c= end_time - strat_time
     min_c = int(time_c / 60)
     time_c = time_c - min_c * 60
     print('Preparing data total time cost : {}m , {:.3f}s'.format(min_c,time_c))
+    return W,D
 
 # load pre-computing matrix
 def load_Matrix(W_fileName , D_fileName):
@@ -266,12 +267,15 @@ if is_test:
     img1 = img1[::5,::5,:]
 h,w,c = img1.shape
 img1_data = img1.reshape((h*w,c))
-save_Matrix("W","D")
-W1,D1 = load_Matrix("W","D")
+if is_newfile or not os.path.exists(new_save_folder):
+    W1,D1 = prepare_Matrix("W","D",img1)
+else:
+    print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
+    W1,D1 = load_Matrix("W","D")
 # label = k_means(img1,img1_data,4)
-label = kernel_k_means(img1,W1,4)
+# label = kernel_k_means(img1,W1,4)
 gif.append(img1)
-# spectral(4,W1,D1,True)
+spectral(4,W1,D1,True)
 plt.figure()
 plt.imshow(img1)
 gif.save("Result/result.gif")
