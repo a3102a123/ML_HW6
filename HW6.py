@@ -147,16 +147,39 @@ def k_means(img,data,K):
 
     return result
 
+def init_kernel_center_plus(W,K):
+    N = W.shape[0]
+    centers = np.zeros(K,dtype=np.uint)
+    centers[0] = np.random.randint(0,N,1)
+    center_num = 1
+    while center_num < K:
+        dist = np.zeros(N)
+        for i in range(center_num):
+            temp_dis = 1 - W[centers[i],:]
+            if i == 0:
+                dist = temp_dis
+            else:
+                dist = np.minimum(dist,temp_dis)
+        centers[center_num] = np.argmax(dist)
+        center_num += 1
+    result = np.argmax(W[centers,:],axis=0)
+    return result
+
 # kernel k means
 def kernel_k_means(img,W,K):
     N = W.shape[0]
+    # random initial
     result = np.random.randint(0,K,N)
+    # k-means++
+    result = init_kernel_center_plus(W,K)
+    
     pre_result = np.zeros(N)
     pre_result.fill(-1)
     dist = np.zeros((N,K))
     iteration = 1
     draw_label(result,img)
     while True:
+        # E-step : calc the distance between data point & cluster center in kernel space
         dist.fill(0)
         for c in range(K):
             mask = (result == c)
@@ -167,6 +190,7 @@ def kernel_k_means(img,W,K):
             dist[:,c] -= 2*np.sum(W[:,mask],axis=1)/c_num
             # print(c_num,dist[:,c].shape,W[:,mask].shape,KK.shape)
         pre_result = result.copy()
+        # M-step : assign closest label to data point
         result = dist.argmin(axis=1)
         
         draw_label(result,img)
@@ -273,9 +297,9 @@ else:
     print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
     W1,D1 = load_Matrix("W","D")
 # label = k_means(img1,img1_data,4)
-# label = kernel_k_means(img1,W1,4)
+label = kernel_k_means(img1,W1,4)
 gif.append(img1)
-spectral(4,W1,D1,True)
+# spectral(4,W1,D1,True)
 plt.figure()
 plt.imshow(img1)
 gif.save("Result/result.gif")
