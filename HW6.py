@@ -7,12 +7,12 @@ import time
 import imageio
 import cv2
 
-is_test = True
+is_test = False
 is_newfile = False
-save_folder = "Matrix_s"
-new_save_folder = "Matrix_s"
+save_folder = "Matrix_ori_07"
+new_save_folder = "Matrix_ori_07"
 
-theta = [0.0007,0.0007]
+theta = [0.00007,0.00007]
 thresholding = 0.01
 img1 = plt.imread("image1.png")
 img2 = plt.imread("image2.png")
@@ -171,7 +171,7 @@ def kernel_k_means(img,W,K):
     # random initial
     result = np.random.randint(0,K,N)
     # k-means++
-    result = init_kernel_center_plus(W,K)
+    # result = init_kernel_center_plus(W,K)
     
     pre_result = np.zeros(N)
     pre_result.fill(-1)
@@ -297,9 +297,9 @@ else:
     print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
     W1,D1 = load_Matrix("W","D")
 # label = k_means(img1,img1_data,4)
-label = kernel_k_means(img1,W1,4)
+# label = kernel_k_means(img1,W1,4)
 gif.append(img1)
-# spectral(4,W1,D1,True)
+spectral(4,W1,D1,True)
 plt.figure()
 plt.imshow(img1)
 gif.save("Result/result.gif")
