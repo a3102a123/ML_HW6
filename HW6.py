@@ -6,13 +6,16 @@ import sys
 import time
 import imageio
 import cv2
+from scipy.spatial.distance import *
 
-is_test = False
-is_newfile = False
-save_folder = "Matrix_ori_07"
-new_save_folder = "Matrix_ori_07"
+is_test = True
+is_newfile = True
+save_folder = "Matrix_s"
+new_save_folder = "Matrix_s"
 
-theta = [0.00007,0.00007]
+theta = [0.00001,0.001]
+# theta = [0.00007,0.00007]
+# theta = [1,1]
 thresholding = 0.01
 img1 = plt.imread("image1.png")
 img2 = plt.imread("image2.png")
@@ -27,6 +30,13 @@ label_to_color = {
     5: [255, 0, 255],
     6: [255,255,255]
 }
+
+def label2Image(label):
+    img = np.zeros((label.shape[0],label.shape[1],3),dtype=np.uint8)
+    for l,color in label_to_color.items():
+        img[label == l,:] = color
+    return img
+
 class gif_creater:
     def __init__(self,fps=0.8):
         self.imgs = []
@@ -36,14 +46,8 @@ class gif_creater:
         self.imgs.append(img)
     
     def append_label(self,label):
-        img = self.label2Image(label)
+        img = label2Image(label)
         self.append(img)
-        
-    def label2Image(self,label):
-        img = np.zeros((label.shape[0],label.shape[1],3),dtype=np.uint8)
-        for l,color in label_to_color.items():
-            img[label == l,:] = color
-        return img
 
     def save(self,filepath):
         self.ToInt()
@@ -67,8 +71,8 @@ gif = gif_creater()
 
 # kernel function
 def kernel(a_pos,b_pos,a_c,b_c,theta):
-    spatial = np.exp(-theta[0] * np.linalg.norm((a_pos - b_pos),2) ** 2)
-    color = np.exp(-theta[1] * np.linalg.norm((a_c - b_c),2) ** 2)
+    spatial = np.exp(-theta[0] * np.linalg.norm((a_pos - b_pos),2) ** 2 / (2*3**2))
+    color = np.exp(-theta[1] * np.linalg.norm((a_c - b_c),2) ** 2 / (2*2**2))
     return spatial * color
 
 def get_pos(idx,width):
@@ -112,14 +116,18 @@ def init_center_plus(data,K):
         centers[center_num,:] = data[idx,:]
         centers_idx[center_num] = idx
         center_num +=1
-    print(centers_idx)
     return centers
 
 def k_means(img,data,K):
     result = np.zeros(len(data),dtype=np.uint8)
+    # k-means++
     centers = init_center_plus(data,K)
+    # random
+    # centers = init_center_random(data,K)
     iteration = 1
     while True:
+        if iteration == 1:
+            print(data.shape)
         # E-step (clustering the data points by closest center)
         for i,d in enumerate(data):
             min_dis = sys.float_info.max
@@ -142,7 +150,7 @@ def k_means(img,data,K):
         draw_label(result,img)
         # plt.show()
         iteration += 1
-        if diff <= thresholding:
+        if diff <= thresholding and True:
             break
 
     return result
@@ -169,9 +177,9 @@ def init_kernel_center_plus(W,K):
 def kernel_k_means(img,W,K):
     N = W.shape[0]
     # random initial
-    result = np.random.randint(0,K,N)
+    # result = np.random.randint(0,K,N)
     # k-means++
-    # result = init_kernel_center_plus(W,K)
+    result = init_kernel_center_plus(W,K)
     
     pre_result = np.zeros(N)
     pre_result.fill(-1)
@@ -193,13 +201,13 @@ def kernel_k_means(img,W,K):
         # M-step : assign closest label to data point
         result = dist.argmin(axis=1)
         
-        draw_label(result,img)
+        # draw_label(result,img)
         change_num_ratio = 1 - np.sum((pre_result - result) == 0) / N
         print("K-means iteration : {} , The ratio of changing label : {}".format(iteration,change_num_ratio))
         iteration += 1
         if  change_num_ratio < thresholding:
             break
-    
+    draw_label(result,img)
     return result
 
 # Default assume label coming from k-means. It's 1-D array
@@ -209,12 +217,25 @@ def draw_label(label,img):
     for i,l in enumerate(label):
         idx = get_pos(i,w)
         label_picture[idx[0],idx[1]] = l
-    gif.append_label(label_picture)
+    label_img = label2Image(label_picture)
+    gif.append(label_img)
     plt.figure()
-    plt.imshow(label_picture)
+    plt.imshow(label_img)
 
 # Calc similarity graphy
 def weighted_graph(img):
+    # the faster way finded on internet
+    h,w,c = img.shape
+    img_data = img.reshape((h*w,c))
+    n=len(img_data)
+    spacial_idx=np.zeros((n,2))
+    for i in range(n):
+        spacial_idx[i]=[i//h,i%h]
+    spacial = np.exp(squareform(-theta[0]*pdist(spacial_idx,'sqeuclidean')))
+    color = np.exp(squareform(-theta[1]*pdist(img_data,'sqeuclidean')))
+    W = spacial * color
+    return W
+
     h,w,c = img.shape
     W = np.zeros((h*w,h*w))
     # weight matrix contains the weight of every two by two pixel
@@ -262,7 +283,7 @@ def load_Matrix(W_fileName , D_fileName):
     return W,D
 
 # sepctral clustering
-def spectral(K,W,D,is_norm):
+def spectral(K,W,D,is_norm,img):
     L = D - W
     # normalized Laplacian
     if is_norm:
@@ -272,7 +293,6 @@ def spectral(K,W,D,is_norm):
     # calc the eigenvalue & eigenvector of Laplacian graph
     eigenValues , eigenVectors = np.linalg.eig(L)
     sorted_eigen_idx = np.argsort(eigenValues)
-    print(eigenVectors.shape)
     H = eigenVectors[:,sorted_eigen_idx[1:K+1]]
 
     # normalize the norm of every row to 1
@@ -280,8 +300,7 @@ def spectral(K,W,D,is_norm):
         sum = np.linalg.norm(H,axis=1)
         H = H / sum.reshape(-1,1)
 
-    print(np.linalg.norm(H[0,:]))
-    label = k_means(img1,H,K)
+    label = k_means(img,H,K)
 
 # print(kernel(np.array([1,1]),np.array([50,1]),np.array([1,1,1]),np.array([1,1,1]),theta))
 
@@ -296,10 +315,12 @@ if is_newfile or not os.path.exists(new_save_folder):
 else:
     print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
     W1,D1 = load_Matrix("W","D")
+plt.figure()
+plt.imshow(W1)
 # label = k_means(img1,img1_data,4)
 # label = kernel_k_means(img1,W1,4)
 gif.append(img1)
-spectral(4,W1,D1,True)
+spectral(4,W1,D1,False,img1)
 plt.figure()
 plt.imshow(img1)
 gif.save("Result/result.gif")
