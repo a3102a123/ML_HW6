@@ -13,8 +13,10 @@ is_newfile = True
 save_folder = "Matrix_s"
 new_save_folder = "Matrix_s"
 
+# kernel my way
 theta = [0.00001,0.001]
-# theta = [0.00007,0.00007]
+# kernel faster way
+theta = [0.00007,0.00007]
 # theta = [1,1]
 thresholding = 0.01
 img1 = plt.imread("image1.png")
@@ -31,11 +33,18 @@ label_to_color = {
     6: [255,255,255]
 }
 
-def label2Image(label):
-    img = np.zeros((label.shape[0],label.shape[1],3),dtype=np.uint8)
+def label2Image(label,img):
+    h,w,c = img.shape
+    label_picture = np.zeros((h,w))
+    for i,l in enumerate(label):
+        idx = get_pos(i,w)
+        label_picture[idx[0],idx[1]] = l
+
+    ret_img = np.zeros((h,w,3),dtype=np.uint8)
     for l,color in label_to_color.items():
-        img[label == l,:] = color
-    return img
+        ret_img[label_picture == l,:] = color
+
+    return ret_img
 
 class gif_creater:
     def __init__(self,fps=0.8):
@@ -211,16 +220,12 @@ def kernel_k_means(img,W,K):
     return result
 
 # Default assume label coming from k-means. It's 1-D array
-def draw_label(label,img):
-    h,w,c = img.shape
-    label_picture = np.zeros((h,w))
-    for i,l in enumerate(label):
-        idx = get_pos(i,w)
-        label_picture[idx[0],idx[1]] = l
-    label_img = label2Image(label_picture)
+def draw_label(label,img,is_show=False):
+    label_img = label2Image(label,img)
     gif.append(label_img)
-    plt.figure()
-    plt.imshow(label_img)
+    if is_show:
+        plt.figure()
+        plt.imshow(label_img)
 
 # Calc similarity graphy
 def weighted_graph(img):
@@ -231,8 +236,8 @@ def weighted_graph(img):
     spacial_idx=np.zeros((n,2))
     for i in range(n):
         spacial_idx[i]=[i//h,i%h]
-    spacial = np.exp(squareform(-theta[0]*pdist(spacial_idx,'sqeuclidean')))
-    color = np.exp(squareform(-theta[1]*pdist(img_data,'sqeuclidean')))
+    spacial = np.exp(-theta[0]*squareform(pdist(spacial_idx,'sqeuclidean')))
+    color = np.exp(-theta[1]*squareform(pdist(img_data,'sqeuclidean')))
     W = spacial * color
     return W
 
@@ -249,6 +254,8 @@ def weighted_graph(img):
     return W
 
 def degree_matrix(W):
+    D = np.diag(np.sum(W,axis=1))
+    return D
     D = np.zeros_like(W)
     h,w = D.shape
     for i in range(h):
@@ -283,7 +290,7 @@ def load_Matrix(W_fileName , D_fileName):
     return W,D
 
 # sepctral clustering
-def spectral(K,W,D,is_norm,img):
+def spectral(K,W,D,is_norm,img,is_show_H = False):
     L = D - W
     # normalized Laplacian
     if is_norm:
@@ -293,14 +300,77 @@ def spectral(K,W,D,is_norm,img):
     # calc the eigenvalue & eigenvector of Laplacian graph
     eigenValues , eigenVectors = np.linalg.eig(L)
     sorted_eigen_idx = np.argsort(eigenValues)
+    # let smallest eigenvector = 1 vector
+    # eigenVectors /= eigenVectors[:,sorted_eigen_idx[0]].reshape(-1,1)
     H = eigenVectors[:,sorted_eigen_idx[1:K+1]]
+    print(H)
 
     # normalize the norm of every row to 1
-    if is_norm:
+    if is_norm or True:
         sum = np.linalg.norm(H,axis=1)
         H = H / sum.reshape(-1,1)
 
     label = k_means(img,H,K)
+
+    # visualizing H
+    if is_show_H:
+        fig = plt.figure()
+        ax = fig.add_subplot(projection='3d')
+        ax.scatter(H[:,0], H[:,1], H[:,2])
+        H = H.reshape(img.shape).astype(np.float64)
+        for i in range(3):
+            H[:,:,i] = (H[:,:,i] - np.min(H[:,:,i])) / (np.max(H[:,:,i]) - np.min(H[:,:,i]))
+        plt.figure()
+        plt.imshow(H)
+    
+    return label
+
+# calc kernel without hyperparameter for grid search
+def kernel_for_search(img):
+    # the faster way finded on internet
+    h,w,c = img.shape
+    img_data = img.reshape((h*w,c))
+    n=len(img_data)
+    spacial_idx=np.zeros((n,2))
+    for i in range(n):
+        spacial_idx[i]=[i//h,i%h]
+    spacial = np.exp(-squareform(pdist(spacial_idx,'sqeuclidean')))
+    color = np.exp(-squareform(pdist(img_data,'sqeuclidean')))
+    return spacial,color
+
+def grid_search(K,img):
+    # 0 for spacial , 1 for color
+    theta = [1,1]
+    fig = plt.figure()
+    gs = fig.add_gridspec(5, 5, hspace=0, wspace=0)
+    fig.suptitle("Hyperparameter grid search",fontsize = 20)
+    fig.text(0.5, 0.04, "Color theta", ha='center',fontsize = 14)
+    fig.text(0.04, 0.5, "Spacial theta", va='center', rotation='vertical',fontsize = 14)
+    axs = gs.subplots(sharex='col', sharey='row')
+    fig.set_figheight(10)
+    fig.set_figwidth(10)
+
+    k_spacial,k_color = kernel_for_search(img)
+    for i in range(5):
+        for j in range(5):
+            ax = axs[i,j]
+            ax.axes.xaxis.set_ticks([])
+            ax.axes.yaxis.set_ticks([])
+            # ax.axis("off")
+            theta_s = theta[0] * (1 / 10 ** i)
+            theta_c = theta[1] * (1 / 10 ** j)
+            if j == 0:
+                ax.set(ylabel=theta_s)
+            if i == 4:
+                ax.set(xlabel=theta_c)
+            W = theta_s*k_spacial + theta_c*k_color
+            D = degree_matrix(W)
+            label = spectral(K,W,D,False,img)
+            ax.imshow(label2Image(label,img))
+            ax.axis('tight')
+            # ax.plot(W)
+
+    plt.show()
 
 # print(kernel(np.array([1,1]),np.array([50,1]),np.array([1,1,1]),np.array([1,1,1]),theta))
 
@@ -310,17 +380,23 @@ if is_test:
     img1 = img1[::5,::5,:]
 h,w,c = img1.shape
 img1_data = img1.reshape((h*w,c))
+
+grid_search(3,img1)
+sys.exit()
+
 if is_newfile or not os.path.exists(new_save_folder):
     W1,D1 = prepare_Matrix("W","D",img1)
 else:
     print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
     W1,D1 = load_Matrix("W","D")
+print("W : \n",W1)
+print("D : \n",D1)
 plt.figure()
 plt.imshow(W1)
 # label = k_means(img1,img1_data,4)
 # label = kernel_k_means(img1,W1,4)
 gif.append(img1)
-spectral(4,W1,D1,False,img1)
+# spectral(3,W1,D1,False,img1)
 plt.figure()
 plt.imshow(img1)
 gif.save("Result/result.gif")
