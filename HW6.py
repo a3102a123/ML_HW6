@@ -335,13 +335,15 @@ def spectral(K,W,D,is_norm,img,gif_name,is_show_H = False,is_show = False):
         sum = np.linalg.norm(H,axis=1)
         H = H / sum.reshape(-1,1)
 
-    label = k_means(img,H,K,is_show,True)
+    label = k_means(img,H,K,is_show,False)
 
     # visualizing H
     if is_show_H:
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
-        ax.scatter(H[:,0], H[:,1], H[:,2])
+        for i in range(3):
+            mask = (label==i)
+            ax.scatter(H[mask,0], H[mask,1], H[mask,2], c=np.array(label_to_color[i])/255.0)
         H = H.reshape(img.shape).astype(np.float64)
         for i in range(3):
             H[:,:,i] = (H[:,:,i] - np.min(H[:,:,i])) / (np.max(H[:,:,i]) - np.min(H[:,:,i]))
@@ -350,6 +352,7 @@ def spectral(K,W,D,is_norm,img,gif_name,is_show_H = False,is_show = False):
     
     gif.save(os.path.join("Result","{}_random.gif".format(gif_name)))
     gif.clear()
+
     # test different clustering
     for k in range(2,5):
         gif.append(img)
@@ -464,8 +467,10 @@ W2,D2 = kernel2Matrix(spacial2,color2,[0.00001,0.1])
 # image1 clustering
 start_time = time.time()
 
-# label = kernel_k_means(img1,W1,3,gif_name="t_img1")
-label = spectral(3,W1,D1,False,img1,gif_name="test_result_img1",is_show=False)
+# label = kernel_k_means(img1,W1,3,gif_name="Kernel_img1_random",is_rand=True)
+# for k in range(2,5):
+#     label = kernel_k_means(img1,W1,k,gif_name="Kernel_img1_K{}".format(k))
+label = spectral(3,W1,D1,True,img1,gif_name="Normalized_img1",is_show=False,is_show_H=False)
 
 end_time = time.time()
 time_c= end_time - start_time
@@ -480,8 +485,10 @@ plt.imshow(img1)
 # image2 clustering
 start_time = time.time()
 
-# label = kernel_k_means(img2,W2,3,gif_name="t_img2")
-label = spectral(3,W2,D2,False,img2,gif_name="test_result_img2",is_show=False)
+# label = kernel_k_means(img2,W2,3,gif_name="Kernel_img2_random",is_rand=True)
+# for k in range(2,5):
+#     label = kernel_k_means(img2,W2,k,gif_name="Kernel_img2_K{}".format(k))
+label = spectral(3,W2,D2,True,img2,gif_name="Normalized_img2",is_show=False,is_show_H=False)
 
 end_time = time.time()
 time_c= end_time - start_time
