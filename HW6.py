@@ -8,10 +8,10 @@ import imageio
 import cv2
 from scipy.spatial.distance import *
 
-is_test = True
+is_test = False
 is_newfile = False
-save_folder = "Matrix_s"
-new_save_folder = "Matrix_s"
+save_folder = "Matrix_o"
+new_save_folder = "Matrix_o"
 
 # kernel my way
 # theta = [0.00001,0.001]
@@ -133,16 +133,16 @@ def init_center_plus(data,K):
         center_num +=1
     return centers
 
-def k_means(img,data,K,is_show=False):
+def k_means(img,data,K,is_show=False,is_rand=False):
     result = np.zeros(len(data),dtype=np.uint8)
-    # k-means++
-    centers = init_center_plus(data,K)
+    if is_rand:
     # random
-    # centers = init_center_random(data,K)
+        centers = init_center_random(data,K)
+    else:
+    # k-means++
+        centers = init_center_plus(data,K)
     iteration = 1
     while True:
-        if iteration == 1:
-            print(data.shape)
         # E-step (clustering the data points by closest center)
         for i,d in enumerate(data):
             min_dis = sys.float_info.max
@@ -189,12 +189,15 @@ def init_kernel_center_plus(W,K):
     return result
 
 # kernel k means
-def kernel_k_means(img,W,K,is_show=False):
+def kernel_k_means(img,W,K,gif_name,is_show=False,is_rand=False):
+    gif.append(img)
     N = W.shape[0]
-    # random initial
-    # result = np.random.randint(0,K,N)
-    # k-means++
-    result = init_kernel_center_plus(W,K)
+    if is_rand:
+        # random initial
+        result = np.random.randint(0,K,N)
+    else:
+        # k-means++
+        result = init_kernel_center_plus(W,K)
     
     pre_result = np.zeros(N)
     pre_result.fill(-1)
@@ -223,6 +226,8 @@ def kernel_k_means(img,W,K,is_show=False):
         if  change_num_ratio < thresholding:
             break
     draw_label(result,img,is_show)
+    gif.save(os.path.join("Result","{}.gif".format(gif_name)))
+    gif.clear()
     return result
 
 # Default assume label coming from k-means. It's 1-D array
@@ -309,7 +314,7 @@ def load_Matrix(filename):
     return W,D,spacial,color
 
 # sepctral clustering
-def spectral(K,W,D,is_norm,img,is_show_H = False,is_show = False):
+def spectral(K,W,D,is_norm,img,gif_name,is_show_H = False,is_show = False):
     L = D - W
     # normalized Laplacian
     if is_norm:
@@ -321,6 +326,8 @@ def spectral(K,W,D,is_norm,img,is_show_H = False,is_show = False):
     sorted_eigen_idx = np.argsort(eigenValues)
     # let smallest eigenvector = 1 vector
     # eigenVectors /= eigenVectors[:,sorted_eigen_idx[0]].reshape(-1,1)
+    # test different initial (K=3 ,using random)
+    gif.append(img)
     H = eigenVectors[:,sorted_eigen_idx[1:K+1]]
 
     # normalize the norm of every row to 1
@@ -328,7 +335,7 @@ def spectral(K,W,D,is_norm,img,is_show_H = False,is_show = False):
         sum = np.linalg.norm(H,axis=1)
         H = H / sum.reshape(-1,1)
 
-    label = k_means(img,H,K,is_show)
+    label = k_means(img,H,K,is_show,True)
 
     # visualizing H
     if is_show_H:
@@ -340,6 +347,34 @@ def spectral(K,W,D,is_norm,img,is_show_H = False,is_show = False):
             H[:,:,i] = (H[:,:,i] - np.min(H[:,:,i])) / (np.max(H[:,:,i]) - np.min(H[:,:,i]))
         plt.figure()
         plt.imshow(H)
+    
+    gif.save(os.path.join("Result","{}_random.gif".format(gif_name)))
+    gif.clear()
+    # test different clustering
+    for k in range(2,5):
+        gif.append(img)
+        H = eigenVectors[:,sorted_eigen_idx[1:k+1]]
+
+        # normalize the norm of every row to 1
+        if is_norm or True:
+            sum = np.linalg.norm(H,axis=1)
+            H = H / sum.reshape(-1,1)
+
+        label = k_means(img,H,k,is_show)
+
+        # visualizing H
+        if is_show_H:
+            fig = plt.figure()
+            ax = fig.add_subplot(projection='3d')
+            ax.scatter(H[:,0], H[:,1], H[:,2])
+            H = H.reshape(img.shape).astype(np.float64)
+            for i in range(3):
+                H[:,:,i] = (H[:,:,i] - np.min(H[:,:,i])) / (np.max(H[:,:,i]) - np.min(H[:,:,i]))
+            plt.figure()
+            plt.imshow(H)
+        
+        gif.save(os.path.join("Result","{}_K{}.gif".format(gif_name,k)))
+        gif.clear()
     
     return label
 
@@ -377,13 +412,13 @@ def grid_search(K,img,mode):
             ax.axes.xaxis.set_ticks([])
             ax.axes.yaxis.set_ticks([])
             # ax.axis("off")
-            theta_s = -theta[0] * min(1,(1 / 10 ** (i+1)))
-            theta_c = -theta[1] * min(1,(1 / 10 ** j))
+            theta_s = theta[0] * min(1,(1 / 10 ** (i+1)))
+            theta_c = theta[1] * min(1,(1 / 10 ** j))
             if j == 0:
                 ax.set(ylabel=theta_s)
             if i == 4:
                 ax.set(xlabel=theta_c)
-            W = np.exp(theta_s*k_spacial) * np.exp(theta_c*k_color)
+            W = np.exp(-theta_s*k_spacial) * np.exp(-theta_c*k_color)
             D = degree_matrix(W)
             if mode == 0:
                 label = kernel_k_means(img,W,K)
@@ -401,6 +436,7 @@ def grid_search(K,img,mode):
 if is_test:
     # down sampling to create a small image
     img1 = img1[::5,::5,:]
+    img2 = img2[::5,::5,:]
 h,w,c = img1.shape
 img1_data = img1.reshape((h*w,c))
 
@@ -410,31 +446,51 @@ img1_data = img1.reshape((h*w,c))
 # plt.show()
 # sys.exit()
 
+# data preparing
 if is_newfile or not os.path.exists(new_save_folder):
     prepare_Matrix("img1",img1)
+    prepare_Matrix("img2",img2)
 else:
     print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
-W1,D1,spacial,color = load_Matrix("img1")
-W1,D1 = kernel2Matrix(spacial,color,[0.0001,1])
-plt.figure()
-plt.imshow(W1)
+W1,D1,spacial1,color1 = load_Matrix("img1")
+W2,D2,spacial2,color2 = load_Matrix("img2")
+W1,D1 = kernel2Matrix(spacial1,color1,[0.00001,0.1])
+W2,D2 = kernel2Matrix(spacial2,color2,[0.00001,0.1])
+# plt.figure()
+# plt.imshow(W1)
 # label = k_means(img1,img1_data,4)
 # label = kernel_k_means(img1,W1,4,True)
-gif.append(img1)
 
+# image1 clustering
 start_time = time.time()
 
-label = spectral(3,W1,D1,True,img1,is_show=False)
+# label = kernel_k_means(img1,W1,3,gif_name="t_img1")
+label = spectral(3,W1,D1,False,img1,gif_name="test_result_img1",is_show=False)
 
 end_time = time.time()
 time_c= end_time - start_time
 min_c = int(time_c / 60)
 time_c = time_c - min_c * 60
 print('Clustering total time cost : {}m , {:.3f}s'.format(min_c,time_c))
-
 plt.figure()
 plt.imshow(label2Image(label,img1))
 plt.figure()
 plt.imshow(img1)
-gif.save("Result/result.gif")
+
+# image2 clustering
+start_time = time.time()
+
+# label = kernel_k_means(img2,W2,3,gif_name="t_img2")
+label = spectral(3,W2,D2,False,img2,gif_name="test_result_img2",is_show=False)
+
+end_time = time.time()
+time_c= end_time - start_time
+min_c = int(time_c / 60)
+time_c = time_c - min_c * 60
+print('Clustering total time cost : {}m , {:.3f}s'.format(min_c,time_c))
+plt.figure()
+plt.imshow(label2Image(label,img2))
+plt.figure()
+plt.imshow(img2)
+
 plt.show()
