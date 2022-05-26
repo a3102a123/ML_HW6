@@ -9,14 +9,14 @@ import cv2
 from scipy.spatial.distance import *
 
 is_test = True
-is_newfile = True
+is_newfile = False
 save_folder = "Matrix_s"
 new_save_folder = "Matrix_s"
 
 # kernel my way
-theta = [0.00001,0.001]
+# theta = [0.00001,0.001]
 # kernel faster way
-theta = [0.00007,0.00007]
+theta = [1,1]
 # theta = [1,1]
 thresholding = 0.01
 img1 = plt.imread("image1.png")
@@ -25,9 +25,9 @@ img2 = plt.imread("image2.png")
 # gif class
 label_to_color = {
     0: [255,  0, 0],
-    1: [0,  255, 0],
+    1: [255,  255, 0],
     2: [ 0,  0,  255],
-    3: [255, 255, 0],
+    3: [0, 255, 0],
     4: [0, 255, 255],
     5: [255, 0, 255],
     6: [255,255,255]
@@ -47,11 +47,17 @@ def label2Image(label,img):
     return ret_img
 
 class gif_creater:
-    def __init__(self,fps=0.8):
+    def __init__(self,fps=2):
         self.imgs = []
         self.fps = fps
 
     def append(self,img):
+        file_path = os.path.join("Result","GIF_Image","img{}.png".format(len(self.imgs)))
+        plt.figure()
+        plt.imshow(img)
+        plt.savefig(file_path)
+        plt.close()
+        img = plt.imread(file_path)
         self.imgs.append(img)
     
     def append_label(self,label):
@@ -60,7 +66,7 @@ class gif_creater:
 
     def save(self,filepath):
         self.ToInt()
-        self.resize(400)
+        # self.resize(400)
         imageio.mimsave(filepath, self.imgs, fps=self.fps)
 
     def clear(self):
@@ -127,7 +133,7 @@ def init_center_plus(data,K):
         center_num +=1
     return centers
 
-def k_means(img,data,K):
+def k_means(img,data,K,is_show=False):
     result = np.zeros(len(data),dtype=np.uint8)
     # k-means++
     centers = init_center_plus(data,K)
@@ -156,7 +162,7 @@ def k_means(img,data,K):
             diff += np.linalg.norm(new_center - centers[l],2)
             centers[l] = new_center
         print("K-means iteration : {} , difference : {}".format(iteration,diff))
-        draw_label(result,img)
+        draw_label(result,img,is_show=is_show)
         # plt.show()
         iteration += 1
         if diff <= thresholding and True:
@@ -183,7 +189,7 @@ def init_kernel_center_plus(W,K):
     return result
 
 # kernel k means
-def kernel_k_means(img,W,K):
+def kernel_k_means(img,W,K,is_show=False):
     N = W.shape[0]
     # random initial
     # result = np.random.randint(0,K,N)
@@ -194,7 +200,7 @@ def kernel_k_means(img,W,K):
     pre_result.fill(-1)
     dist = np.zeros((N,K))
     iteration = 1
-    draw_label(result,img)
+    draw_label(result,img,is_show)
     while True:
         # E-step : calc the distance between data point & cluster center in kernel space
         dist.fill(0)
@@ -216,7 +222,7 @@ def kernel_k_means(img,W,K):
         iteration += 1
         if  change_num_ratio < thresholding:
             break
-    draw_label(result,img)
+    draw_label(result,img,is_show)
     return result
 
 # Default assume label coming from k-means. It's 1-D array
@@ -228,7 +234,7 @@ def draw_label(label,img,is_show=False):
         plt.imshow(label_img)
 
 # Calc similarity graphy
-def weighted_graph(img):
+def weighted_graph(filename,img):
     # the faster way finded on internet
     h,w,c = img.shape
     img_data = img.reshape((h*w,c))
@@ -236,8 +242,12 @@ def weighted_graph(img):
     spacial_idx=np.zeros((n,2))
     for i in range(n):
         spacial_idx[i]=[i//h,i%h]
-    spacial = np.exp(-theta[0]*squareform(pdist(spacial_idx,'sqeuclidean')))
-    color = np.exp(-theta[1]*squareform(pdist(img_data,'sqeuclidean')))
+    spacial = squareform(pdist(spacial_idx,'sqeuclidean'))
+    color = squareform(pdist(img_data,'sqeuclidean'))
+    save_Matrix(new_save_folder,"spacial_{}".format(filename),spacial)
+    save_Matrix(new_save_folder,"color_{}".format(filename),color)
+    spacial = np.exp(-theta[0]*spacial)
+    color = np.exp(-theta[1]*color)
     W = spacial * color
     return W
 
@@ -265,32 +275,41 @@ def degree_matrix(W):
         D[i,i] = sum
     return D 
 
+# using pre-computed spacial & color kernel with hyper-parameter to combine different similarity matrix & degree matrix
+def kernel2Matrix(spacial,color,theta):
+    spacial = np.exp(-theta[0]*spacial)
+    color = np.exp(-theta[1]*color)
+    W = spacial * color
+    D = degree_matrix(W)
+    return W,D
+
 # prepare associated matrix W & D
 # W is similarity matrix
 # D is degree matrix
-def prepare_Matrix(W_fileName , D_fileName , img):
-    strat_time = time.time()
+def prepare_Matrix(filename , img):
+    start_time = time.time()
 
-    W = weighted_graph(img)
+    W = weighted_graph(filename,img)
     D = degree_matrix(W)
-    save_Matrix(new_save_folder,W_fileName,W)
-    save_Matrix(new_save_folder,D_fileName,D)
+    save_Matrix(new_save_folder,"W_{}".format(filename),W)
+    save_Matrix(new_save_folder,"D_{}".format(filename),D)
         
     end_time = time.time()
-    time_c= end_time - strat_time
+    time_c= end_time - start_time
     min_c = int(time_c / 60)
     time_c = time_c - min_c * 60
     print('Preparing data total time cost : {}m , {:.3f}s'.format(min_c,time_c))
-    return W,D
 
 # load pre-computing matrix
-def load_Matrix(W_fileName , D_fileName):
-    W = np.load(os.path.join(save_folder,"{}.npy".format(W_fileName)))
-    D = np.load(os.path.join(save_folder,"{}.npy".format(D_fileName)))
-    return W,D
+def load_Matrix(filename):
+    W = np.load(os.path.join(save_folder,"W_{}.npy".format(filename)))
+    D = np.load(os.path.join(save_folder,"D_{}.npy".format(filename)))
+    spacial = np.load(os.path.join(save_folder,"spacial_{}.npy".format(filename)))
+    color = np.load(os.path.join(save_folder,"color_{}.npy".format(filename)))
+    return W,D,spacial,color
 
 # sepctral clustering
-def spectral(K,W,D,is_norm,img,is_show_H = False):
+def spectral(K,W,D,is_norm,img,is_show_H = False,is_show = False):
     L = D - W
     # normalized Laplacian
     if is_norm:
@@ -303,14 +322,13 @@ def spectral(K,W,D,is_norm,img,is_show_H = False):
     # let smallest eigenvector = 1 vector
     # eigenVectors /= eigenVectors[:,sorted_eigen_idx[0]].reshape(-1,1)
     H = eigenVectors[:,sorted_eigen_idx[1:K+1]]
-    print(H)
 
     # normalize the norm of every row to 1
     if is_norm or True:
         sum = np.linalg.norm(H,axis=1)
         H = H / sum.reshape(-1,1)
 
-    label = k_means(img,H,K)
+    label = k_means(img,H,K,is_show)
 
     # visualizing H
     if is_show_H:
@@ -334,21 +352,23 @@ def kernel_for_search(img):
     spacial_idx=np.zeros((n,2))
     for i in range(n):
         spacial_idx[i]=[i//h,i%h]
-    spacial = np.exp(-squareform(pdist(spacial_idx,'sqeuclidean')))
-    color = np.exp(-squareform(pdist(img_data,'sqeuclidean')))
+    spacial = squareform(pdist(spacial_idx,'sqeuclidean'))
+    color = squareform(pdist(img_data,'sqeuclidean'))
     return spacial,color
 
-def grid_search(K,img):
-    # 0 for spacial , 1 for color
+# mode 0 : kernel k-means , 1 : ratio cut , 2 : normalized cut
+def grid_search(K,img,mode):
+    name_dict = {0: "Kernel K-means" , 1: "Ratio Cut" , 2: "Normalized cut"}
+    #theta 0 for spacial , 1 for color
     theta = [1,1]
     fig = plt.figure()
     gs = fig.add_gridspec(5, 5, hspace=0, wspace=0)
-    fig.suptitle("Hyperparameter grid search",fontsize = 20)
-    fig.text(0.5, 0.04, "Color theta", ha='center',fontsize = 14)
-    fig.text(0.04, 0.5, "Spacial theta", va='center', rotation='vertical',fontsize = 14)
+    fig.suptitle("{} Hyperparameter grid search".format(name_dict[mode]),fontsize = 20,y=0.92)
+    fig.text(0.5, 0.07, "Color theta", ha='center',fontsize = 14)
+    fig.text(0.07, 0.5, "Spacial theta", va='center', rotation='vertical',fontsize = 14)
     axs = gs.subplots(sharex='col', sharey='row')
-    fig.set_figheight(10)
-    fig.set_figwidth(10)
+    fig.set_figheight(9)
+    fig.set_figwidth(9)
 
     k_spacial,k_color = kernel_for_search(img)
     for i in range(5):
@@ -357,20 +377,23 @@ def grid_search(K,img):
             ax.axes.xaxis.set_ticks([])
             ax.axes.yaxis.set_ticks([])
             # ax.axis("off")
-            theta_s = theta[0] * (1 / 10 ** i)
-            theta_c = theta[1] * (1 / 10 ** j)
+            theta_s = -theta[0] * min(1,(1 / 10 ** (i+1)))
+            theta_c = -theta[1] * min(1,(1 / 10 ** j))
             if j == 0:
                 ax.set(ylabel=theta_s)
             if i == 4:
                 ax.set(xlabel=theta_c)
-            W = theta_s*k_spacial + theta_c*k_color
+            W = np.exp(theta_s*k_spacial) * np.exp(theta_c*k_color)
             D = degree_matrix(W)
-            label = spectral(K,W,D,False,img)
+            if mode == 0:
+                label = kernel_k_means(img,W,K)
+            elif mode == 1:
+                label = spectral(K,W,D,False,img)
+            elif mode == 2:
+                label = spectral(K,W,D,True,img)
             ax.imshow(label2Image(label,img))
             ax.axis('tight')
             # ax.plot(W)
-
-    plt.show()
 
 # print(kernel(np.array([1,1]),np.array([50,1]),np.array([1,1,1]),np.array([1,1,1]),theta))
 
@@ -381,22 +404,36 @@ if is_test:
 h,w,c = img1.shape
 img1_data = img1.reshape((h*w,c))
 
-grid_search(3,img1)
-sys.exit()
+# grid search
+# for i in range(3):
+#     grid_search(3,img1,i)
+# plt.show()
+# sys.exit()
 
 if is_newfile or not os.path.exists(new_save_folder):
-    W1,D1 = prepare_Matrix("W","D",img1)
+    prepare_Matrix("img1",img1)
 else:
     print("Pre-computed similarity matrix (W) and degree matrix (D) already exist!")
-    W1,D1 = load_Matrix("W","D")
-print("W : \n",W1)
-print("D : \n",D1)
+W1,D1,spacial,color = load_Matrix("img1")
+W1,D1 = kernel2Matrix(spacial,color,[0.0001,1])
 plt.figure()
 plt.imshow(W1)
 # label = k_means(img1,img1_data,4)
-# label = kernel_k_means(img1,W1,4)
+# label = kernel_k_means(img1,W1,4,True)
 gif.append(img1)
-# spectral(3,W1,D1,False,img1)
+
+start_time = time.time()
+
+label = spectral(3,W1,D1,True,img1,is_show=False)
+
+end_time = time.time()
+time_c= end_time - start_time
+min_c = int(time_c / 60)
+time_c = time_c - min_c * 60
+print('Clustering total time cost : {}m , {:.3f}s'.format(min_c,time_c))
+
+plt.figure()
+plt.imshow(label2Image(label,img1))
 plt.figure()
 plt.imshow(img1)
 gif.save("Result/result.gif")
